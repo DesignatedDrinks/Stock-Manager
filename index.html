@@ -1,308 +1,34 @@
-<!-- index.html  ✅ Copy/paste into your GitHub Pages repo root -->
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Inventory</title>
-  <style>
-    /* ====== CSS ====== */
-    :root{
-      --bg:#f6f7fb;
-      --card:#ffffff;
-      --border:#e7e7ee;
-      --muted:#666;
-      --text:#111;
-      --shadow: 0 2px 10px rgba(0,0,0,.04);
-      --radius:14px;
-    }
-    *{ box-sizing:border-box; }
-    body{
-      margin:0;
-      font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Arial;
-      background:var(--bg);
-      color:var(--text);
-    }
-    header{
-      position:sticky; top:0; z-index:10;
-      background:var(--card);
-      border-bottom:1px solid var(--border);
-      padding:14px 16px;
-    }
-    .wrap{ max-width:1100px; margin:0 auto; }
-    .topbar{
-      display:flex; gap:10px; align-items:center; flex-wrap:wrap;
-    }
-    .brand{
-      font-weight:900;
-      letter-spacing:.2px;
-      margin-right:6px;
-    }
-    input, button{
-      border:1px solid #d8d8e6;
-      border-radius:12px;
-      padding:10px 12px;
-      background:#fff;
-      font-size:14px;
-    }
-    input{ min-width:220px; }
-    button{ cursor:pointer; }
-    button:disabled{ opacity:.6; cursor:not-allowed; }
-    .statusTop{
-      margin-left:auto;
-      font-size:12px;
-      color:var(--muted);
-      min-height:16px;
-    }
-
-    main{ padding:16px; }
-    .grid{
-      display:grid;
-      grid-template-columns:repeat(auto-fill, minmax(240px,1fr));
-      gap:14px;
-    }
-    .card{
-      background:var(--card);
-      border:1px solid var(--border);
-      border-radius:var(--radius);
-      padding:12px;
-      box-shadow:var(--shadow);
-      overflow:hidden;
-    }
-    .img{
-      width:100%;
-      aspect-ratio:4/3;
-      object-fit:contain;
-      background:#fafafa;
-      border:1px solid #eee;
-      border-radius:12px;
-    }
-    .title{
-      font-weight:800;
-      margin:10px 0 8px;
-      line-height:1.15;
-      font-size:15px;
-    }
-    .pill{
-      display:inline-block;
-      padding:4px 10px;
-      border-radius:999px;
-      border:1px solid var(--border);
-      background:#fafafa;
-      font-size:12px;
-      color:#333;
-      margin-bottom:10px;
-    }
-    .qtyRow{
-      display:flex;
-      gap:8px;
-      align-items:center;
-    }
-    .qty{
-      width:92px;
-      text-align:center;
-      font-weight:900;
-      font-size:16px;
-      padding:9px 10px;
-    }
-    .statusLine{
-      font-size:12px;
-      color:var(--muted);
-      margin-top:8px;
-      min-height:16px;
-    }
-    .ok{ color:#0b7a0b; }
-    .bad{ color:#b00020; }
-    .ghost{
-      opacity:.35;
-      filter:grayscale(1);
-    }
-    .footerTip{
-      margin-top:10px;
-      font-size:12px;
-      color:var(--muted);
-    }
-  </style>
+  <link rel="stylesheet" href="styles.css" />
 </head>
 
 <body>
   <header>
     <div class="wrap topbar">
       <div class="brand">Inventory</div>
+
       <input id="search" placeholder="Search products…" />
-      <button id="refreshBtn">Refresh</button>
-      <button id="hideZeroBtn" title="Hide items with 0 cases">Hide zero</button>
+
+      <button id="refreshBtn" type="button">Refresh</button>
+      <button id="hideZeroBtn" type="button">Hide zero</button>
+
       <div id="topStatus" class="statusTop"></div>
     </div>
   </header>
 
   <main class="wrap">
     <div id="grid" class="grid"></div>
+
     <div class="footerTip">
-      Tip: productTitle is the key. If you rename titles in the sheet, your updates won’t match.
+      Editing uses <b>productTitle</b> as the key. Don’t rename product titles in the sheet unless you understand the consequences.
     </div>
   </main>
 
-  <script>
-    // ====== JS ======
-    // Paste your Google Apps Script Web App URL here (must support GET and POST).
-    const API_BASE = "PASTE_YOUR_WEB_APP_URL_HERE";
-
-    // Sheet columns required:
-    // productTitle | imageUrl | casesQty
-
-    const grid = document.getElementById("grid");
-    const search = document.getElementById("search");
-    const refreshBtn = document.getElementById("refreshBtn");
-    const hideZeroBtn = document.getElementById("hideZeroBtn");
-    const topStatus = document.getElementById("topStatus");
-
-    let items = [];
-    let hideZero = false;
-
-    function esc(s){
-      return String(s ?? "").replace(/[&<>"']/g, m => ({
-        "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-      }[m]));
-    }
-
-    function setTopStatus(msg){
-      topStatus.textContent = msg || "";
-    }
-
-    async function loadInventory(){
-      if (!API_BASE || API_BASE.includes("PASTE_YOUR_WEB_APP_URL_HERE")) {
-        setTopStatus("Set API_BASE in the code.");
-        return;
-      }
-      refreshBtn.disabled = true;
-      setTopStatus("Loading…");
-
-      try{
-        const res = await fetch(API_BASE, { method:"GET" });
-        const data = await res.json();
-
-        // Accept either {ok:true, items:[...]} OR a raw array for flexibility.
-        const list = Array.isArray(data) ? data : (data.items || []);
-        if (!Array.isArray(list)) throw new Error("Bad response format");
-
-        items = list
-          .map(x => ({
-            productTitle: String(x.productTitle ?? "").trim(),
-            imageUrl: String(x.imageUrl ?? "").trim(),
-            casesQty: Number(x.casesQty ?? 0) || 0
-          }))
-          .filter(x => x.productTitle.length > 0);
-
-        setTopStatus(`Loaded ${items.length} items`);
-        render();
-      } catch(e){
-        setTopStatus(`Load failed: ${e.message || e}`);
-      } finally {
-        refreshBtn.disabled = false;
-      }
-    }
-
-    function render(){
-      const q = search.value.trim().toLowerCase();
-      let filtered = !q ? items : items.filter(it =>
-        it.productTitle.toLowerCase().includes(q)
-      );
-      if (hideZero) filtered = filtered.filter(it => (Number(it.casesQty)||0) !== 0);
-
-      grid.innerHTML = filtered.map(it => {
-        const key = esc(it.productTitle); // key is productTitle
-        const title = esc(it.productTitle);
-        const img = esc(it.imageUrl);
-        const qty = Number(it.casesQty ?? 0) || 0;
-        const ghost = qty === 0 ? "ghost" : "";
-
-        return `
-          <div class="card ${ghost}" data-key="${key}">
-            <img class="img" src="${img}" alt="${title}"
-              onerror="this.classList.add('ghost'); this.alt='Missing image';" />
-            <div class="title">${title}</div>
-            <div class="pill">Cases</div>
-
-            <div class="qtyRow">
-              <button onclick="stepQty('${key}', -1)">-</button>
-              <input class="qty" id="qty-${key}" type="number" min="0" step="1" value="${qty}" />
-              <button onclick="stepQty('${key}', 1)">+</button>
-              <button onclick="saveQty('${key}')">Save</button>
-            </div>
-
-            <div class="statusLine" id="status-${key}"></div>
-          </div>
-        `;
-      }).join("");
-    }
-
-    window.stepQty = function(productTitleKey, delta){
-      const input = document.getElementById(`qty-${productTitleKey}`);
-      const v = Math.max(0, Math.round((Number(input.value)||0) + delta));
-      input.value = v;
-    };
-
-    window.saveQty = async function(productTitleKey){
-      const statusEl = document.getElementById(`status-${productTitleKey}`);
-      const input = document.getElementById(`qty-${productTitleKey}`);
-
-      const casesQty = Number(input.value);
-      if (!Number.isFinite(casesQty) || casesQty < 0){
-        statusEl.textContent = "casesQty must be a number ≥ 0";
-        statusEl.className = "statusLine bad";
-        return;
-      }
-
-      // Find the item by productTitle (exact match)
-      const item = items.find(x => x.productTitle === productTitleKey);
-      if (!item){
-        statusEl.textContent = "Key mismatch: productTitle not found (did it change in the sheet?)";
-        statusEl.className = "statusLine bad";
-        return;
-      }
-
-      statusEl.textContent = "Saving…";
-      statusEl.className = "statusLine";
-
-      try{
-        const res = await fetch(API_BASE, {
-          method:"POST",
-          headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({
-            productTitle: item.productTitle,
-            casesQty: Math.round(casesQty)
-          })
-        });
-
-        const data = await res.json();
-        if (data.ok === false) throw new Error(data.error || "Save failed");
-
-        // Update local cache
-        item.casesQty = Math.round(casesQty);
-
-        statusEl.textContent = "Saved";
-        statusEl.className = "statusLine ok";
-
-        // Re-render to update zero styling if needed
-        render();
-      } catch(e){
-        statusEl.textContent = e.message || String(e);
-        statusEl.className = "statusLine bad";
-      }
-    };
-
-    refreshBtn.addEventListener("click", loadInventory);
-    search.addEventListener("input", render);
-
-    hideZeroBtn.addEventListener("click", () => {
-      hideZero = !hideZero;
-      hideZeroBtn.textContent = hideZero ? "Show zero" : "Hide zero";
-      render();
-    });
-
-    // boot
-    loadInventory();
-  </script>
+  <script src="app.js"></script>
 </body>
 </html>
