@@ -1,7 +1,7 @@
 // =======================
 // CONFIG
 // =======================
-const API_BASE = "https://script.google.com/macros/s/AKfycbzW2E0yCpAKf3B8U1XsXtCymWwjmTmlsMWKOYA27XMLiA2ad95ZWAkgI3DckgQHsKstZg/exec";
+const API_BASE = "https://script.google.com/macros/s/AKfycbyJmINZoyQD42amB0zCEXFZZanypNzggK2hshgtMHLnejeyIQmhrraZ0ZEZgarqdcMtsg/exec";
 
 // =======================
 // DOM
