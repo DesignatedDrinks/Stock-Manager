@@ -8,21 +8,19 @@
 </head>
 <body>
 
-  <header class="header">
-    <div class="wrap headerRow">
-      <div class="brand">Inventory</div>
+<header class="header">
+  <div class="wrap headerRow">
+    <div class="brand">Inventory</div>
+    <input id="search" class="search" placeholder="Search products…" />
+    <button id="refreshBtn" class="btn">Refresh</button>
+    <div id="topStatus" class="topStatus"></div>
+  </div>
+</header>
 
-      <input id="search" class="search" placeholder="Search…" />
+<main class="wrap">
+  <div id="list" class="list"></div>
+</main>
 
-      <button id="refreshBtn" class="btn" type="button">Refresh</button>
-      <div id="topStatus" class="topStatus"></div>
-    </div>
-  </header>
-
-  <main class="wrap">
-    <div id="list" class="list"></div>
-  </main>
-
-  <script src="app.js"></script>
+<script src="app.js"></script>
 </body>
 </html>
