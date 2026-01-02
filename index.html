@@ -6,27 +6,21 @@
   <title>Inventory</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
-
 <body>
-  <header>
-    <div class="wrap topbar">
+
+  <header class="header">
+    <div class="wrap headerRow">
       <div class="brand">Inventory</div>
 
-      <input id="search" placeholder="Search products…" />
+      <input id="search" class="search" placeholder="Search…" />
 
-      <button id="refreshBtn" type="button">Refresh</button>
-      <button id="hideZeroBtn" type="button">Hide zero</button>
-
-      <div id="topStatus" class="statusTop"></div>
+      <button id="refreshBtn" class="btn" type="button">Refresh</button>
+      <div id="topStatus" class="topStatus"></div>
     </div>
   </header>
 
   <main class="wrap">
-    <div id="grid" class="grid"></div>
-
-    <div class="footerTip">
-      Editing uses <b>productTitle</b> as the key. Don’t rename product titles in the sheet unless you understand the consequences.
-    </div>
+    <div id="list" class="list"></div>
   </main>
 
   <script src="app.js"></script>
