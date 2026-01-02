@@ -1,7 +1,6 @@
-// ====== CONFIG ======
 const API_BASE = "https://script.google.com/macros/s/AKfycbyJmINZoyQD42amB0zCEXFZZanypNzggK2hshgtMHLnejeyIQmhrraZ0ZEZgarqdcMtsg/exec";
 
-// ====== DOM ======
+// DOM
 const listEl = document.getElementById("list");
 const searchEl = document.getElementById("search");
 const refreshBtn = document.getElementById("refreshBtn");
@@ -9,155 +8,145 @@ const topStatus = document.getElementById("topStatus");
 
 let items = [];
 
+// helpers
 function esc(str){
   return String(str ?? "").replace(/[&<>"']/g, m =>
     ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])
   );
 }
 
-// stable DOM id from title (handles weird chars)
 function toId(title){
   return btoa(unescape(encodeURIComponent(title))).replace(/=+$/,"");
+}
+
+function fromId(id){
+  return decodeURIComponent(escape(atob(id)));
 }
 
 function setTopStatus(msg){
   topStatus.textContent = msg || "";
 }
 
-function normalizeResponse(data){
-  if (Array.isArray(data)) return data;
-  if (data && Array.isArray(data.items)) return data.items;
-  return null;
+function setRowStatus(id, msg, type){
+  const el = document.getElementById(`status-${id}`);
+  if (!el) return;
+  el.textContent = msg || "";
+  el.className = "status " + (type || "");
 }
 
+// load
 async function loadInventory(){
   refreshBtn.disabled = true;
   setTopStatus("Loading…");
 
-  try{
-    const res = await fetch(API_BASE, { method:"GET" });
+  try {
+    const res = await fetch(API_BASE);
     const data = await res.json();
 
-    if (data && data.ok === false) throw new Error(data.error || "Backend returned ok:false");
+    if (data.ok === false) throw new Error(data.error);
 
-    const list = normalizeResponse(data);
-    if (!list) throw new Error("Bad response format");
-
-    items = list.map(r => ({
-      productTitle: String(r.productTitle ?? "").trim(),
-      imageUrl: String(r.imageUrl ?? "").trim(),
-      casesQty: Number(r.casesQty ?? 0) || 0
-    })).filter(x => x.productTitle.length > 0);
+    items = data.items.map(i => ({
+      productTitle: String(i.productTitle).trim(),
+      imageUrl: String(i.imageUrl || "").trim(),
+      casesQty: Number(i.casesQty || 0)
+    }));
 
     setTopStatus(`Loaded ${items.length}`);
     render();
-  } catch(e){
-    setTopStatus(`Load failed: ${e.message || e}`);
+  } catch (e){
+    setTopStatus("Load failed");
   } finally {
     refreshBtn.disabled = false;
   }
 }
 
+// render
 function render(){
-  const q = searchEl.value.trim().toLowerCase();
-  const filtered = !q ? items : items.filter(i => i.productTitle.toLowerCase().includes(q));
+  const q = searchEl.value.toLowerCase();
 
-  listEl.innerHTML = filtered.map(i => {
-    const id = toId(i.productTitle);
-    return `
-      <div class="row" data-id="${id}">
-        <img class="canImg" src="${esc(i.imageUrl)}" alt="${esc(i.productTitle)}"
-             onerror="this.style.opacity='0.3';" />
+  listEl.innerHTML = items
+    .filter(i => i.productTitle.toLowerCase().includes(q))
+    .map(i => {
+      const id = toId(i.productTitle);
+      return `
+        <div class="row">
+          <img class="canImg" src="${esc(i.imageUrl)}" />
 
-        <div>
-          <div class="title">${esc(i.productTitle)}</div>
-          <div class="sub">Cases on hand</div>
+          <div>
+            <div class="title">${esc(i.productTitle)}</div>
+            <div class="sub">Cases</div>
+          </div>
+
+          <div class="controls">
+            <button data-a="dec" data-id="${id}">−</button>
+            <input id="qty-${id}" class="qtyInput" type="number" min="0" value="${i.casesQty}" />
+            <button data-a="inc" data-id="${id}">+</button>
+            <button data-a="save" data-id="${id}">Save</button>
+            <span id="status-${id}" class="status"></span>
+          </div>
         </div>
-
-        <div class="controls">
-          <button class="smallBtn" data-action="dec" data-id="${id}" type="button">−</button>
-          <input class="qtyInput" id="qty-${id}" type="number" min="0" step="1" value="${i.casesQty}" />
-          <button class="smallBtn" data-action="inc" data-id="${id}" type="button">+</button>
-          <button class="smallBtn" data-action="save" data-id="${id}" type="button">Save</button>
-          <span class="status" id="status-${id}"></span>
-        </div>
-      </div>
-    `;
-  }).join("");
+      `;
+    }).join("");
 }
 
-function findTitleById(id){
-  // reverse base64 -> title
-  return decodeURIComponent(escape(atob(id)));
-}
-
-function setRowStatus(id, msg, type){
-  const el = document.getElementById(`status-${id}`);
-  if (!el) return;
-  el.textContent = msg || "";
-  el.classList.remove("ok","bad");
-  if (type) el.classList.add(type);
-}
-
-function stepQty(id, delta){
+// actions
+function step(id, delta){
   const input = document.getElementById(`qty-${id}`);
-  const v = Math.max(0, Math.round((Number(input.value) || 0) + delta));
-  input.value = v;
+  input.value = Math.max(0, Number(input.value) + delta);
 }
 
-async function saveQty(id){
-  const title = findTitleById(id);
+async function save(id){
+  const title = fromId(id);
   const input = document.getElementById(`qty-${id}`);
-  const casesQty = Number(input.value);
+  const qty = Number(input.value);
 
-  if (!Number.isFinite(casesQty) || casesQty < 0){
-    setRowStatus(id, "Invalid qty", "bad");
-    return;
-  }
-
-  // Exact match item
-  const item = items.find(x => x.productTitle === title);
-  if (!item){
-    setRowStatus(id, "Title not found", "bad");
+  if (!Number.isFinite(qty) || qty < 0){
+    setRowStatus(id, "Invalid", "bad");
     return;
   }
 
   setRowStatus(id, "Saving…");
 
-  try{
+  try {
+    // ✅ FORM POST (NO CORS)
+    const body = new URLSearchParams({
+      productTitle: title,
+      casesQty: String(Math.round(qty))
+    });
+
     const res = await fetch(API_BASE, {
-      method:"POST",
-      headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ productTitle: item.productTitle, casesQty: Math.round(casesQty) })
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body
     });
 
     const data = await res.json();
-    if (data && data.ok === false) throw new Error(data.error || "Save failed");
+    if (data.ok === false) throw new Error(data.error);
 
-    item.casesQty = Math.round(casesQty);
+    const item = items.find(i => i.productTitle === title);
+    if (item) item.casesQty = Math.round(qty);
+
     setRowStatus(id, "Saved", "ok");
-  } catch(e){
-    setRowStatus(id, e.message || "Save failed", "bad");
+  } catch {
+    setRowStatus(id, "Save failed", "bad");
   }
 }
 
-// Events
-refreshBtn.addEventListener("click", loadInventory);
-searchEl.addEventListener("input", render);
+// events
+refreshBtn.onclick = loadInventory;
+searchEl.oninput = render;
 
-listEl.addEventListener("click", (e) => {
+listEl.onclick = e => {
   const btn = e.target.closest("button");
   if (!btn) return;
 
-  const action = btn.getAttribute("data-action");
-  const id = btn.getAttribute("data-id");
-  if (!action || !id) return;
+  const id = btn.dataset.id;
+  const action = btn.dataset.a;
 
-  if (action === "dec") stepQty(id, -1);
-  if (action === "inc") stepQty(id, 1);
-  if (action === "save") saveQty(id);
-});
+  if (action === "dec") step(id, -1);
+  if (action === "inc") step(id, 1);
+  if (action === "save") save(id);
+};
 
-// Boot
+// boot
 loadInventory();
-
