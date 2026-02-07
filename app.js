@@ -6,7 +6,6 @@ const refreshBtn = document.getElementById("refreshBtn");
 const topStatus = document.getElementById("topStatus");
 
 let items = [];
-const saveTimers = new Map(); // id -> timeout
 
 function esc(str){
   return String(str ?? "").replace(/[&<>"']/g, m =>
@@ -17,6 +16,7 @@ function esc(str){
 function toId(title){
   return btoa(unescape(encodeURIComponent(title))).replace(/=+$/,"");
 }
+
 function fromId(id){
   return decodeURIComponent(escape(atob(id)));
 }
@@ -40,7 +40,7 @@ async function loadInventory(){
       casesQty: Number(i.casesQty || 0)
     }));
 
-    setTopStatus(`Loaded ${items.length} • Auto-save ON`);
+    setTopStatus(`Loaded ${items.length}`);
     render();
   } catch {
     setTopStatus("Load failed");
@@ -57,8 +57,8 @@ function render(){
     .map(i => {
       const id = toId(i.productTitle);
       return `
-        <div class="row" data-row="${id}">
-          <img class="canImg" src="${esc(i.imageUrl)}" alt="" />
+        <div class="row">
+          <img class="canImg" src="${esc(i.imageUrl)}" />
 
           <div>
             <div class="title">${esc(i.productTitle)}</div>
@@ -67,15 +67,9 @@ function render(){
 
           <div class="controls">
             <button class="smallBtn" data-a="dec" data-id="${id}">−</button>
-            <input
-              id="qty-${id}"
-              class="qtyInput"
-              type="number"
-              inputmode="numeric"
-              min="0"
-              value="${i.casesQty}"
-            />
+            <input id="qty-${id}" class="qtyInput" type="number" min="0" value="${i.casesQty}" />
             <button class="smallBtn" data-a="inc" data-id="${id}">+</button>
+            <button class="smallBtn" data-a="save" data-id="${id}">Save</button>
             <span id="status-${id}" class="status"></span>
           </div>
         </div>
@@ -86,39 +80,18 @@ function render(){
 function step(id, delta){
   const input = document.getElementById(`qty-${id}`);
   input.value = Math.max(0, Number(input.value) + delta);
-  scheduleSave(id);
 }
 
-function scheduleSave(id){
-  // clear existing timer
-  if (saveTimers.has(id)){
-    clearTimeout(saveTimers.get(id));
-  }
-
-  const statusEl = document.getElementById(`status-${id}`);
-  statusEl.textContent = "Typing…";
-  statusEl.className = "status warn";
-
-  // debounce save
-  const t = setTimeout(() => saveNow(id), 600);
-  saveTimers.set(id, t);
-}
-
-async function saveNow(id){
-  saveTimers.delete(id);
-
+async function save(id){
   const title = fromId(id);
   const qty = Number(document.getElementById(`qty-${id}`).value);
-  const statusEl = document.getElementById(`status-${id}`);
 
   if (!Number.isFinite(qty) || qty < 0){
-    statusEl.textContent = "Invalid";
-    statusEl.className = "status bad";
+    document.getElementById(`status-${id}`).textContent = "Invalid";
     return;
   }
 
-  statusEl.textContent = "Saving…";
-  statusEl.className = "status warn";
+  document.getElementById(`status-${id}`).textContent = "Saving…";
 
   const body = new URLSearchParams({
     productTitle: title,
@@ -135,51 +108,23 @@ async function saveNow(id){
     const data = await res.json();
     if (data.ok === false) throw new Error();
 
-    statusEl.textContent = "Saved";
-    statusEl.className = "status ok";
-
-    // keep local items in sync (no refresh needed)
-    const idx = items.findIndex(x => x.productTitle === title);
-    if (idx !== -1) items[idx].casesQty = Math.round(qty);
-
+    document.getElementById(`status-${id}`).textContent = "Saved";
   } catch {
-    statusEl.textContent = "Failed";
-    statusEl.className = "status bad";
+    document.getElementById(`status-${id}`).textContent = "Failed";
   }
 }
 
 refreshBtn.onclick = loadInventory;
 searchEl.oninput = render;
 
-// Click +/- buttons
-listEl.onclick = (e) => {
+listEl.onclick = e => {
   const btn = e.target.closest("button");
   if (!btn) return;
   const id = btn.dataset.id;
   const a = btn.dataset.a;
   if (a === "dec") step(id, -1);
   if (a === "inc") step(id, 1);
+  if (a === "save") save(id);
 };
-
-// Auto-save on typing
-listEl.addEventListener("input", (e) => {
-  const input = e.target.closest(".qtyInput");
-  if (!input) return;
-  const id = input.id.replace("qty-","");
-  scheduleSave(id);
-});
-
-// Also save immediately when leaving the field
-listEl.addEventListener("change", (e) => {
-  const input = e.target.closest(".qtyInput");
-  if (!input) return;
-  const id = input.id.replace("qty-","");
-  // if a debounce is pending, force save now
-  if (saveTimers.has(id)){
-    clearTimeout(saveTimers.get(id));
-    saveTimers.delete(id);
-  }
-  saveNow(id);
-});
 
 loadInventory();
