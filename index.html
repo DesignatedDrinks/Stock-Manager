@@ -11,53 +11,15 @@
 <header class="header">
   <div class="wrap headerRow">
     <div class="brand">Inventory</div>
-
     <input id="search" class="search" placeholder="Search products…" />
-
     <button id="refreshBtn" class="btn">Refresh</button>
-
-    <div class="topStatus" style="display:flex; gap:10px; align-items:center;">
-      <div id="topStatus"></div>
-    </div>
-  </div>
-
-  <div class="wrap">
-    <div class="toolbar">
-      <div class="pills">
-        <button class="pill active" data-filter="all">All</button>
-        <button class="pill" data-filter="uncounted">Uncounted</button>
-        <button class="pill" data-filter="counted">Counted</button>
-        <button class="pill" data-filter="mismatch">Mismatch</button>
-      </div>
-
-      <div class="mode">
-        <label class="switch">
-          <input id="countModeToggle" type="checkbox" />
-          Count Mode
-        </label>
-      </div>
-
-      <div class="progress" title="Count progress">
-        <div id="progressBar"></div>
-      </div>
-    </div>
+    <div id="topStatus" class="topStatus"></div>
   </div>
 </header>
 
 <main class="wrap">
   <div id="list" class="list"></div>
 </main>
-
-<div class="bottomBar">
-  <div class="wrap bottomRow">
-    <button id="newSessionBtn" class="btn">New Count Session</button>
-    <button id="commitBtn" class="btn primary">Commit Session</button>
-    <button id="clearLocalBtn" class="btn">Clear Local</button>
-    <div class="hint">
-      Tip: In Count Mode, type the real case count (overwrite). Press <span class="kbd">Enter</span> to jump to next.
-    </div>
-  </div>
-</div>
 
 <script src="app.js"></script>
 </body>
