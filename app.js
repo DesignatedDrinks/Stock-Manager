@@ -76,7 +76,6 @@ function render(){
               value="${i.casesQty}"
             />
             <button class="smallBtn" data-a="inc" data-id="${id}">+</button>
-            <button class="smallBtn" data-a="save" data-id="${id}">Save</button>
             <span id="status-${id}" class="status"></span>
           </div>
         </div>
@@ -142,18 +141,10 @@ async function saveNow(id){
   }
 }
 
-async function save(id){
-  if (saveTimers.has(id)){
-    clearTimeout(saveTimers.get(id));
-    saveTimers.delete(id);
-  }
-  await saveNow(id);
-}
-
 refreshBtn.onclick = loadInventory;
 searchEl.oninput = render;
 
-// Button clicks
+// Button clicks (+/- only)
 listEl.onclick = e => {
   const btn = e.target.closest("button");
   if (!btn) return;
@@ -161,7 +152,6 @@ listEl.onclick = e => {
   const a = btn.dataset.a;
   if (a === "dec") step(id, -1);
   if (a === "inc") step(id, 1);
-  if (a === "save") save(id);
 };
 
 // Auto-save while typing
@@ -177,7 +167,12 @@ listEl.addEventListener("change", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
   const id = input.id.replace("qty-","");
-  save(id);
+  // If debounce pending, cancel and save now
+  if (saveTimers.has(id)){
+    clearTimeout(saveTimers.get(id));
+    saveTimers.delete(id);
+  }
+  saveNow(id);
 });
 
 loadInventory();
