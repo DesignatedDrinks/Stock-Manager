@@ -26,9 +26,16 @@ function setTopStatus(msg){
   topStatus.textContent = msg || "";
 }
 
-// rounds to nearest 0.5 (12-pack)
+// nearest 0.5
 function roundToHalf(x){
   return Math.round(x * 2) / 2;
+}
+
+// robust parse (also tolerates commas just in case)
+function parseQty(str){
+  const s = String(str || "").trim().replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : NaN;
 }
 
 async function loadInventory(){
@@ -46,7 +53,7 @@ async function loadInventory(){
       casesQty: Number(i.casesQty || 0)
     }));
 
-    setTopStatus(`Loaded ${items.length} • Auto-save ON`);
+    setTopStatus(`Loaded ${items.length} • Auto-save ON • .5 allowed`);
     render();
   } catch {
     setTopStatus("Load failed");
@@ -68,20 +75,24 @@ function render(){
 
           <div>
             <div class="title">${esc(i.productTitle)}</div>
-            <div class="sub">Cases (24-Pack) • .5 = 12-pack</div>
+            <div class="sub">Cases (24-Pack) • 0.5 = 12-pack</div>
           </div>
 
           <div class="controls">
             <button class="smallBtn" data-a="dec" data-id="${id}">−</button>
+
+            <!-- KEY CHANGE: text + decimal keypad -->
             <input
               id="qty-${id}"
               class="qtyInput"
-              type="number"
+              type="text"
               inputmode="decimal"
-              min="0"
-              step="0.5"
+              autocomplete="off"
+              spellcheck="false"
               value="${i.casesQty}"
+              placeholder="0"
             />
+
             <button class="smallBtn" data-a="inc" data-id="${id}">+</button>
             <span id="status-${id}" class="status"></span>
           </div>
@@ -90,10 +101,17 @@ function render(){
     }).join("");
 }
 
+function setInputValue(id, val){
+  const input = document.getElementById(`qty-${id}`);
+  input.value = (val % 1 === 0) ? String(val) : String(val); // keep 1.5 as 1.5
+}
+
 function step(id, delta){
   const input = document.getElementById(`qty-${id}`);
-  const next = Number(input.value) + delta;
-  input.value = Math.max(0, roundToHalf(next));
+  const cur = parseQty(input.value);
+  const base = Number.isFinite(cur) ? cur : 0;
+  const next = Math.max(0, roundToHalf(base + delta));
+  setInputValue(id, next);
   scheduleSave(id);
 }
 
@@ -113,7 +131,8 @@ async function saveNow(id){
   saveTimers.delete(id);
 
   const title = fromId(id);
-  const raw = Number(document.getElementById(`qty-${id}`).value);
+  const input = document.getElementById(`qty-${id}`);
+  const raw = parseQty(input.value);
   const statusEl = document.getElementById(`status-${id}`);
 
   if (!Number.isFinite(raw) || raw < 0){
@@ -123,14 +142,14 @@ async function saveNow(id){
 
   const qty = roundToHalf(raw);
 
-  // snap UI to nearest .5 so it never drifts
-  document.getElementById(`qty-${id}`).value = qty;
+  // snap UI to .5 so you SEE what got saved
+  setInputValue(id, qty);
 
   statusEl.textContent = "Saving…";
 
   const body = new URLSearchParams({
     productTitle: title,
-    casesQty: String(qty) // keep decimals
+    casesQty: String(qty) // IMPORTANT: do NOT round to int
   });
 
   try{
@@ -145,7 +164,7 @@ async function saveNow(id){
 
     statusEl.textContent = "Saved";
 
-    // keep local state in sync
+    // keep local in sync
     const idx = items.findIndex(x => x.productTitle === title);
     if (idx !== -1) items[idx].casesQty = qty;
 
@@ -176,7 +195,7 @@ listEl.addEventListener("input", e => {
 });
 
 // Save immediately when leaving field
-listEl.addEventListener("change", e => {
+listEl.addEventListener("blur", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
   const id = input.id.replace("qty-","");
@@ -185,6 +204,6 @@ listEl.addEventListener("change", e => {
     saveTimers.delete(id);
   }
   saveNow(id);
-});
+}, true);
 
 loadInventory();
