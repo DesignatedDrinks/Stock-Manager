@@ -26,6 +26,11 @@ function setTopStatus(msg){
   topStatus.textContent = msg || "";
 }
 
+// rounds to nearest 0.5 (12-pack)
+function roundToHalf(x){
+  return Math.round(x * 2) / 2;
+}
+
 async function loadInventory(){
   refreshBtn.disabled = true;
   setTopStatus("Loading…");
@@ -63,7 +68,7 @@ function render(){
 
           <div>
             <div class="title">${esc(i.productTitle)}</div>
-            <div class="sub">Cases (24-Pack)</div>
+            <div class="sub">Cases (24-Pack) • .5 = 12-pack</div>
           </div>
 
           <div class="controls">
@@ -72,7 +77,9 @@ function render(){
               id="qty-${id}"
               class="qtyInput"
               type="number"
+              inputmode="decimal"
               min="0"
+              step="0.5"
               value="${i.casesQty}"
             />
             <button class="smallBtn" data-a="inc" data-id="${id}">+</button>
@@ -85,7 +92,8 @@ function render(){
 
 function step(id, delta){
   const input = document.getElementById(`qty-${id}`);
-  input.value = Math.max(0, Number(input.value) + delta);
+  const next = Number(input.value) + delta;
+  input.value = Math.max(0, roundToHalf(next));
   scheduleSave(id);
 }
 
@@ -105,19 +113,24 @@ async function saveNow(id){
   saveTimers.delete(id);
 
   const title = fromId(id);
-  const qty = Number(document.getElementById(`qty-${id}`).value);
+  const raw = Number(document.getElementById(`qty-${id}`).value);
   const statusEl = document.getElementById(`status-${id}`);
 
-  if (!Number.isFinite(qty) || qty < 0){
+  if (!Number.isFinite(raw) || raw < 0){
     statusEl.textContent = "Invalid";
     return;
   }
+
+  const qty = roundToHalf(raw);
+
+  // snap UI to nearest .5 so it never drifts
+  document.getElementById(`qty-${id}`).value = qty;
 
   statusEl.textContent = "Saving…";
 
   const body = new URLSearchParams({
     productTitle: title,
-    casesQty: String(Math.round(qty))
+    casesQty: String(qty) // keep decimals
   });
 
   try{
@@ -134,7 +147,7 @@ async function saveNow(id){
 
     // keep local state in sync
     const idx = items.findIndex(x => x.productTitle === title);
-    if (idx !== -1) items[idx].casesQty = Math.round(qty);
+    if (idx !== -1) items[idx].casesQty = qty;
 
   } catch {
     statusEl.textContent = "Failed";
@@ -144,14 +157,14 @@ async function saveNow(id){
 refreshBtn.onclick = loadInventory;
 searchEl.oninput = render;
 
-// Button clicks (+/- only)
+// +/- clicks (step by 0.5)
 listEl.onclick = e => {
   const btn = e.target.closest("button");
   if (!btn) return;
   const id = btn.dataset.id;
   const a = btn.dataset.a;
-  if (a === "dec") step(id, -1);
-  if (a === "inc") step(id, 1);
+  if (a === "dec") step(id, -0.5);
+  if (a === "inc") step(id, 0.5);
 };
 
 // Auto-save while typing
@@ -167,7 +180,6 @@ listEl.addEventListener("change", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
   const id = input.id.replace("qty-","");
-  // If debounce pending, cancel and save now
   if (saveTimers.has(id)){
     clearTimeout(saveTimers.get(id));
     saveTimers.delete(id);
