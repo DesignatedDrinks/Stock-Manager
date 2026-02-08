@@ -6,7 +6,8 @@ const refreshBtn = document.getElementById("refreshBtn");
 const topStatus = document.getElementById("topStatus");
 
 let items = [];
-const saveTimers = new Map(); // id -> timeout
+const saveTimers = new Map();      // id -> timeout
+const pendingSnap = new Map();     // id -> qty we want to snap to (on blur)
 
 function esc(str){
   return String(str ?? "").replace(/[&<>"']/g, m =>
@@ -17,7 +18,6 @@ function esc(str){
 function toId(title){
   return btoa(unescape(encodeURIComponent(title))).replace(/=+$/,"");
 }
-
 function fromId(id){
   return decodeURIComponent(escape(atob(id)));
 }
@@ -26,11 +26,20 @@ function setTopStatus(msg){
   topStatus.textContent = msg || "";
 }
 
+function setStatus(id, msg){
+  const el = document.getElementById(`status-${id}`);
+  if (el) el.textContent = msg || "";
+}
+
 function roundToHalf(x){
   return Math.round(x * 2) / 2;
 }
 
-// robust parse, tolerates comma
+function fmtQty(n){
+  // show 5 not 5.0, but keep 1.5 as 1.5
+  return (Number.isInteger(n) ? String(n) : String(n));
+}
+
 function parseQty(str){
   const s = String(str || "").trim().replace(",", ".");
   const n = Number(s);
@@ -87,7 +96,7 @@ function render(){
               inputmode="decimal"
               autocomplete="off"
               spellcheck="false"
-              value="${i.casesQty}"
+              value="${fmtQty(i.casesQty)}"
               placeholder=""
             />
 
@@ -99,40 +108,36 @@ function render(){
     }).join("");
 }
 
-function setInputValue(id, val){
-  document.getElementById(`qty-${id}`).value = String(val);
-}
-
-function setStatus(id, msg){
-  const el = document.getElementById(`status-${id}`);
-  if (el) el.textContent = msg || "";
-}
-
 function scheduleSave(id){
   if (saveTimers.has(id)) clearTimeout(saveTimers.get(id));
   setStatus(id, "Typing…");
-  const t = setTimeout(() => saveNow(id), 600);
+  const t = setTimeout(() => saveNow(id, { snapIfNotFocused: false }), 600);
   saveTimers.set(id, t);
 }
 
-async function saveNow(id){
+async function saveNow(id, opts = { snapIfNotFocused: false }){
   saveTimers.delete(id);
 
   const title = fromId(id);
   const input = document.getElementById(`qty-${id}`);
+  if (!input) return;
+
   const raw = parseQty(input.value);
   if (!Number.isFinite(raw) || raw < 0){
     setStatus(id, "Invalid");
     return;
   }
 
-  const qty = roundToHalf(raw);
+  const snapped = roundToHalf(raw);
+
+  // remember what the “true” value is, but DON’T rewrite while focused
+  pendingSnap.set(id, snapped);
 
   setStatus(id, "Saving…");
 
   const body = new URLSearchParams({
     productTitle: title,
-    casesQty: String(qty)
+    casesQty: String(snapped)
   });
 
   try{
@@ -145,13 +150,29 @@ async function saveNow(id){
     const data = await res.json();
     if (data.ok === false) throw new Error();
 
-    // Only snap the UI AFTER save (prevents mid-typing weirdness)
-    if (typeof data.newQty !== "undefined") setInputValue(id, data.newQty);
+    // trust server response if provided
+    const stored = (typeof data.newQty !== "undefined") ? Number(data.newQty) : snapped;
+    pendingSnap.set(id, stored);
+
+    // update local state
+    const idx = items.findIndex(x => x.productTitle === title);
+    if (idx !== -1) items[idx].casesQty = stored;
+
+    // ✅ Only snap the input when NOT focused (or if explicitly requested)
+    const isFocused = (document.activeElement === input);
+    const shouldSnap = opts.snapIfNotFocused ? true : !isFocused;
+
+    if (shouldSnap){
+      input.value = fmtQty(stored);
+    } else {
+      // show a hint if rounding happened, without rewriting their field
+      if (roundToHalf(raw) !== raw){
+        setStatus(id, `Saved → ${fmtQty(stored)}`);
+        return;
+      }
+    }
 
     setStatus(id, "Saved");
-
-    const idx = items.findIndex(x => x.productTitle === title);
-    if (idx !== -1) items[idx].casesQty = Number(data.newQty ?? qty);
 
   } catch {
     setStatus(id, "Failed");
@@ -163,7 +184,7 @@ function step(id, delta){
   const cur = parseQty(input.value);
   const base = Number.isFinite(cur) ? cur : 0;
   const next = Math.max(0, roundToHalf(base + delta));
-  setInputValue(id, next);
+  input.value = fmtQty(next);
   scheduleSave(id);
 }
 
@@ -180,22 +201,20 @@ listEl.onclick = e => {
   if (a === "inc") step(id, 0.5);
 };
 
-// ✅ Make typing painless: tap field selects all; if it's 0, clear it
+// Tap field: clear 0 and select all so typing replaces
 listEl.addEventListener("focusin", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
 
-  // If it's effectively zero, clear it
   const v = input.value.trim();
   if (v === "0" || v === "0.0" || v === "0.00") input.value = "";
 
-  // Select all so next key replaces
   setTimeout(() => {
     try { input.select(); } catch(_){}
   }, 0);
 });
 
-// Auto-save while typing (does NOT rewrite the field)
+// Auto-save while typing (no rewrite)
 listEl.addEventListener("input", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
@@ -203,7 +222,7 @@ listEl.addEventListener("input", e => {
   scheduleSave(id);
 });
 
-// Save immediately when leaving field
+// On blur: save immediately AND snap the value cleanly (this is the only time we force rewrite)
 listEl.addEventListener("blur", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
@@ -214,10 +233,10 @@ listEl.addEventListener("blur", e => {
     saveTimers.delete(id);
   }
 
-  // If they left it blank, treat as 0
   if (input.value.trim() === "") input.value = "0";
 
-  saveNow(id);
+  // save and allow snap (since user left the field)
+  saveNow(id, { snapIfNotFocused: true });
 }, true);
 
 loadInventory();
