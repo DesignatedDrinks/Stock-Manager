@@ -30,6 +30,7 @@ function roundToHalf(x){
   return Math.round(x * 2) / 2;
 }
 
+// robust parse, tolerates comma
 function parseQty(str){
   const s = String(str || "").trim().replace(",", ".");
   const n = Number(s);
@@ -87,7 +88,7 @@ function render(){
               autocomplete="off"
               spellcheck="false"
               value="${i.casesQty}"
-              placeholder="0"
+              placeholder=""
             />
 
             <button class="smallBtn" data-a="inc" data-id="${id}">+</button>
@@ -102,21 +103,14 @@ function setInputValue(id, val){
   document.getElementById(`qty-${id}`).value = String(val);
 }
 
-function step(id, delta){
-  const input = document.getElementById(`qty-${id}`);
-  const cur = parseQty(input.value);
-  const base = Number.isFinite(cur) ? cur : 0;
-  const next = Math.max(0, roundToHalf(base + delta));
-  setInputValue(id, next);
-  scheduleSave(id);
+function setStatus(id, msg){
+  const el = document.getElementById(`status-${id}`);
+  if (el) el.textContent = msg || "";
 }
 
 function scheduleSave(id){
   if (saveTimers.has(id)) clearTimeout(saveTimers.get(id));
-
-  const statusEl = document.getElementById(`status-${id}`);
-  statusEl.textContent = "Typing…";
-
+  setStatus(id, "Typing…");
   const t = setTimeout(() => saveNow(id), 600);
   saveTimers.set(id, t);
 }
@@ -127,17 +121,14 @@ async function saveNow(id){
   const title = fromId(id);
   const input = document.getElementById(`qty-${id}`);
   const raw = parseQty(input.value);
-  const statusEl = document.getElementById(`status-${id}`);
-
   if (!Number.isFinite(raw) || raw < 0){
-    statusEl.textContent = "Invalid";
+    setStatus(id, "Invalid");
     return;
   }
 
   const qty = roundToHalf(raw);
-  setInputValue(id, qty);
 
-  statusEl.textContent = "Saving…";
+  setStatus(id, "Saving…");
 
   const body = new URLSearchParams({
     productTitle: title,
@@ -154,22 +145,32 @@ async function saveNow(id){
     const data = await res.json();
     if (data.ok === false) throw new Error();
 
-    // snap to whatever server actually stored (truth)
+    // Only snap the UI AFTER save (prevents mid-typing weirdness)
     if (typeof data.newQty !== "undefined") setInputValue(id, data.newQty);
 
-    statusEl.textContent = "Saved";
+    setStatus(id, "Saved");
 
     const idx = items.findIndex(x => x.productTitle === title);
     if (idx !== -1) items[idx].casesQty = Number(data.newQty ?? qty);
 
   } catch {
-    statusEl.textContent = "Failed";
+    setStatus(id, "Failed");
   }
+}
+
+function step(id, delta){
+  const input = document.getElementById(`qty-${id}`);
+  const cur = parseQty(input.value);
+  const base = Number.isFinite(cur) ? cur : 0;
+  const next = Math.max(0, roundToHalf(base + delta));
+  setInputValue(id, next);
+  scheduleSave(id);
 }
 
 refreshBtn.onclick = loadInventory;
 searchEl.oninput = render;
 
+// +/- clicks
 listEl.onclick = e => {
   const btn = e.target.closest("button");
   if (!btn) return;
@@ -179,6 +180,22 @@ listEl.onclick = e => {
   if (a === "inc") step(id, 0.5);
 };
 
+// ✅ Make typing painless: tap field selects all; if it's 0, clear it
+listEl.addEventListener("focusin", e => {
+  const input = e.target.closest(".qtyInput");
+  if (!input) return;
+
+  // If it's effectively zero, clear it
+  const v = input.value.trim();
+  if (v === "0" || v === "0.0" || v === "0.00") input.value = "";
+
+  // Select all so next key replaces
+  setTimeout(() => {
+    try { input.select(); } catch(_){}
+  }, 0);
+});
+
+// Auto-save while typing (does NOT rewrite the field)
 listEl.addEventListener("input", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
@@ -186,14 +203,20 @@ listEl.addEventListener("input", e => {
   scheduleSave(id);
 });
 
+// Save immediately when leaving field
 listEl.addEventListener("blur", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
   const id = input.id.replace("qty-","");
+
   if (saveTimers.has(id)){
     clearTimeout(saveTimers.get(id));
     saveTimers.delete(id);
   }
+
+  // If they left it blank, treat as 0
+  if (input.value.trim() === "") input.value = "0";
+
   saveNow(id);
 }, true);
 
