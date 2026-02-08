@@ -1,4 +1,4 @@
-const API_BASE = "https://script.google.com/macros/s/AKfycbwOP9tPEKxKbJj8Dy6PZbV7Jne3Yjgw2lU8uhfazSdVC4NxyHaLeJ8Tr27LaWh71Dy4TQ/exec";
+const API_BASE = "https://script.google.com/macros/s/AKfycbwpTNVpMsCLTFf54yKB4MkdMqiFvB_Sbn65p5u4j0rwLrJY1I-P5BvboY6kaNP7jjYd4A/exec";
 
 const listEl = document.getElementById("list");
 const searchEl = document.getElementById("search");
@@ -26,12 +26,10 @@ function setTopStatus(msg){
   topStatus.textContent = msg || "";
 }
 
-// nearest 0.5
 function roundToHalf(x){
   return Math.round(x * 2) / 2;
 }
 
-// robust parse (also tolerates commas just in case)
 function parseQty(str){
   const s = String(str || "").trim().replace(",", ".");
   const n = Number(s);
@@ -81,7 +79,6 @@ function render(){
           <div class="controls">
             <button class="smallBtn" data-a="dec" data-id="${id}">−</button>
 
-            <!-- KEY CHANGE: text + decimal keypad -->
             <input
               id="qty-${id}"
               class="qtyInput"
@@ -102,8 +99,7 @@ function render(){
 }
 
 function setInputValue(id, val){
-  const input = document.getElementById(`qty-${id}`);
-  input.value = (val % 1 === 0) ? String(val) : String(val); // keep 1.5 as 1.5
+  document.getElementById(`qty-${id}`).value = String(val);
 }
 
 function step(id, delta){
@@ -116,9 +112,7 @@ function step(id, delta){
 }
 
 function scheduleSave(id){
-  if (saveTimers.has(id)){
-    clearTimeout(saveTimers.get(id));
-  }
+  if (saveTimers.has(id)) clearTimeout(saveTimers.get(id));
 
   const statusEl = document.getElementById(`status-${id}`);
   statusEl.textContent = "Typing…";
@@ -141,15 +135,13 @@ async function saveNow(id){
   }
 
   const qty = roundToHalf(raw);
-
-  // snap UI to .5 so you SEE what got saved
   setInputValue(id, qty);
 
   statusEl.textContent = "Saving…";
 
   const body = new URLSearchParams({
     productTitle: title,
-    casesQty: String(qty) // IMPORTANT: do NOT round to int
+    casesQty: String(qty)
   });
 
   try{
@@ -162,11 +154,13 @@ async function saveNow(id){
     const data = await res.json();
     if (data.ok === false) throw new Error();
 
+    // snap to whatever server actually stored (truth)
+    if (typeof data.newQty !== "undefined") setInputValue(id, data.newQty);
+
     statusEl.textContent = "Saved";
 
-    // keep local in sync
     const idx = items.findIndex(x => x.productTitle === title);
-    if (idx !== -1) items[idx].casesQty = qty;
+    if (idx !== -1) items[idx].casesQty = Number(data.newQty ?? qty);
 
   } catch {
     statusEl.textContent = "Failed";
@@ -176,7 +170,6 @@ async function saveNow(id){
 refreshBtn.onclick = loadInventory;
 searchEl.oninput = render;
 
-// +/- clicks (step by 0.5)
 listEl.onclick = e => {
   const btn = e.target.closest("button");
   if (!btn) return;
@@ -186,7 +179,6 @@ listEl.onclick = e => {
   if (a === "inc") step(id, 0.5);
 };
 
-// Auto-save while typing
 listEl.addEventListener("input", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
@@ -194,7 +186,6 @@ listEl.addEventListener("input", e => {
   scheduleSave(id);
 });
 
-// Save immediately when leaving field
 listEl.addEventListener("blur", e => {
   const input = e.target.closest(".qtyInput");
   if (!input) return;
